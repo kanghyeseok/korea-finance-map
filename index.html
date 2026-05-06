@@ -1,0 +1,1192 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>전국 재정자립도 지도 — 모바일</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#1a1410" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Nanum+Myeongjo:wght@400;700;800&family=IBM+Plex+Sans+KR:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+<style>
+  :root {
+    --paper:        #f4efe6;
+    --paper-deep:   #ebe3d4;
+    --ink:          #1a1410;
+    --ink-soft:     #4a3f33;
+    --ink-faint:    #8a7d6c;
+    --rule:         #c9bda8;
+    --accent:       #b91c1c;
+    --highlight:    #facc15;
+    --safe-top:     env(safe-area-inset-top, 0px);
+    --safe-bottom:  env(safe-area-inset-bottom, 0px);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans KR', sans-serif;
+    font-weight: 300; line-height: 1.4;
+    -webkit-font-smoothing: antialiased;
+    touch-action: manipulation;
+    overscroll-behavior: none;
+  }
+
+  .app {
+    position: fixed; inset: 0;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    background: var(--paper);
+    padding-top: var(--safe-top);
+    padding-bottom: var(--safe-bottom);
+  }
+
+  /* ── Header ────────────────────────────────────────── */
+  header.top {
+    border-bottom: 2px solid var(--ink);
+    padding: 10px 14px 8px;
+    background: var(--paper);
+  }
+  header.top h1 {
+    font-family: 'Nanum Myeongjo', serif;
+    font-weight: 800;
+    font-size: 18px;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    color: var(--ink);
+  }
+  header.top .sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    margin-top: 4px;
+  }
+  header.top .sub .accent { color: var(--accent); font-weight: 600; }
+
+  /* metric toggle */
+  .metric-toggle {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    margin-top: 8px;
+    border: 1px solid var(--ink);
+    width: 100%;
+  }
+  .metric-toggle button {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    background: transparent;
+    border: none;
+    border-right: 1px solid var(--ink);
+    color: var(--ink-soft);
+    padding: 9px 4px;
+    cursor: pointer;
+    font-weight: 500;
+  }
+  .metric-toggle button:last-child { border-right: none; }
+  .metric-toggle button.active { background: var(--ink); color: var(--paper); }
+
+  /* ── Map ────────────────────────────────────────── */
+  .map-wrap {
+    position: relative;
+    overflow: hidden;
+    background: var(--paper);
+    background-image: radial-gradient(circle at 1px 1px, rgba(26,20,16,0.05) 1px, transparent 0);
+    background-size: 6px 6px;
+  }
+  #map-svg {
+    width: 100%; height: 100%;
+    display: block;
+    touch-action: none;
+  }
+  #map-svg .region {
+    stroke: var(--paper);
+    stroke-width: 0.5px;
+    transition: filter 100ms ease;
+    cursor: pointer;
+  }
+  #map-svg .region.active {
+    stroke: var(--ink);
+    stroke-width: 1.6px;
+    filter: brightness(1.08);
+  }
+  #map-svg .province-line {
+    fill: none; stroke: var(--ink); stroke-width: 1px;
+    opacity: 0.55; pointer-events: none;
+  }
+  #map-svg .province-label {
+    font-family: 'Nanum Myeongjo', serif;
+    font-weight: 700;
+    font-size: 11px;
+    fill: var(--ink); pointer-events: none;
+    paint-order: stroke fill;
+    stroke: var(--paper); stroke-width: 3px;
+    stroke-linejoin: round;
+    transition: opacity 200ms ease;
+  }
+  #map-svg .muni-label {
+    font-family: 'IBM Plex Sans KR', sans-serif;
+    font-weight: 500;
+    fill: var(--ink); pointer-events: none;
+    paint-order: stroke fill;
+    stroke: var(--paper); stroke-width: 0.5px;
+    stroke-linejoin: round;
+    font-size: 3px;
+    opacity: 0;
+    transition: opacity 220ms ease;
+  }
+  #map-svg .muni-label.show { opacity: 1; }
+  #map-svg .muni-label.high { fill: #fff; stroke: rgba(0,0,0,0.5); }
+
+  .loading {
+    position: absolute; inset: 0;
+    display: grid; place-items: center;
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    color: var(--ink-faint);
+    text-transform: uppercase;
+    padding: 1em;
+  }
+
+  /* Floating reset button */
+  .reset-btn {
+    position: absolute;
+    top: 12px; right: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    background: var(--ink);
+    color: var(--paper);
+    border: 1px solid var(--ink);
+    padding: 10px 14px;
+    cursor: pointer;
+    font-weight: 600;
+    box-shadow: 2px 2px 0 var(--accent);
+    opacity: 0;
+    transform: translateY(-8px);
+    pointer-events: none;
+    transition: opacity 200ms ease, transform 200ms ease;
+    z-index: 10;
+  }
+  .reset-btn.show {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+
+  /* Hint banner */
+  .hint {
+    position: absolute;
+    left: 12px; right: 12px;
+    bottom: 12px;
+    background: rgba(26,20,16,0.86);
+    color: var(--paper);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 8px 12px;
+    text-align: center;
+    border: 1px solid var(--ink);
+    pointer-events: none;
+    transition: opacity 300ms ease;
+    z-index: 5;
+  }
+  .hint.hide { opacity: 0; }
+  .hint .acc { color: var(--highlight); font-weight: 600; }
+
+  /* ── Legend bar (bottom) ────────────────────────────────── */
+  .legend {
+    border-top: 1px solid var(--ink);
+    padding: 8px 14px 10px;
+    background: var(--paper);
+  }
+  .legend-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--ink-soft);
+    margin-bottom: 5px;
+  }
+  .legend-bar {
+    display: flex; height: 12px;
+    border: 1px solid var(--ink);
+  }
+  .legend-bar > span { flex: 1; }
+  .legend-ticks {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-soft);
+    display: flex;
+    justify-content: space-between;
+    margin-top: 4px;
+    letter-spacing: 0.04em;
+  }
+
+  /* ── Bottom Sheet (touch detail) ────────────────────────────────── */
+  .sheet-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(26,20,16,0.4);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 200ms ease;
+    z-index: 20;
+  }
+  .sheet-backdrop.show { opacity: 1; pointer-events: auto; }
+
+  .sheet {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    background: var(--paper);
+    border-top: 2px solid var(--ink);
+    box-shadow: 0 -6px 0 rgba(26,20,16,0.08);
+    padding: 14px 18px calc(20px + var(--safe-bottom));
+    transform: translateY(110%);
+    transition: transform 280ms cubic-bezier(.4,0,.2,1);
+    z-index: 30;
+    max-height: 70vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .sheet.show { transform: translateY(0); }
+
+  .sheet-handle {
+    width: 40px; height: 4px;
+    background: var(--ink-faint);
+    border-radius: 2px;
+    margin: 0 auto 12px;
+  }
+
+  .sheet-close {
+    position: absolute;
+    top: 10px; right: 12px;
+    width: 32px; height: 32px;
+    background: transparent;
+    border: 1px solid var(--ink);
+    color: var(--ink);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  .sheet .ic-prov {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 4px;
+    font-weight: 600;
+  }
+  .sheet .ic-name {
+    font-family: 'Nanum Myeongjo', serif;
+    font-weight: 800;
+    font-size: 22px;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    line-height: 1.1;
+    margin-bottom: 10px;
+    border-bottom: 1px solid var(--ink);
+    padding-bottom: 8px;
+    padding-right: 36px;
+  }
+  .sheet .ic-metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .sheet .ic-cell {
+    text-align: center;
+    border: 1px solid var(--rule);
+    padding: 8px 4px;
+    background: var(--paper-deep);
+  }
+  .sheet .ic-cell .lbl {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    color: var(--ink-faint);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .sheet .ic-cell .val {
+    font-family: 'Nanum Myeongjo', serif;
+    font-weight: 800;
+    font-size: 15px;
+    color: var(--ink);
+    line-height: 1.05;
+    word-break: break-all;
+  }
+  .sheet .ic-cell .unit {
+    font-family: 'IBM Plex Sans KR', sans-serif;
+    font-size: 9px;
+    font-weight: 400;
+    color: var(--ink-soft);
+    margin-left: 2px;
+    white-space: nowrap;
+  }
+  .sheet .ic-extras {
+    border-top: 1px dotted var(--rule);
+    padding-top: 8px;
+    display: grid;
+    gap: 6px;
+  }
+  .sheet .ic-extras .row {
+    display: flex; justify-content: space-between;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    color: var(--ink-soft);
+  }
+  .sheet .ic-extras .row strong {
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .sheet .ic-extras .row.pos strong { color: #15803d; }
+  .sheet .ic-extras .row.neg strong { color: var(--accent); }
+
+  .sheet-action {
+    margin-top: 14px;
+    padding: 12px;
+    background: var(--ink);
+    color: var(--paper);
+    border: none;
+    width: 100%;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .sheet-action.alt { background: var(--paper); color: var(--ink); border: 1px solid var(--ink); }
+
+  /* Tablet/landscape adjustments */
+  @media (min-width: 600px) {
+    header.top h1 { font-size: 22px; }
+    .metric-toggle button { font-size: 12px; padding: 11px 4px; }
+    .sheet { max-width: 480px; left: 50%; transform: translate(-50%, 110%); border-left: 2px solid var(--ink); border-right: 2px solid var(--ink); border-radius: 0; }
+    .sheet.show { transform: translate(-50%, 0); }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header class="top">
+    <h1>전국 재정자립도 지도</h1>
+    <div class="sub">
+      <span class="accent">FY2025</span> · 17 광역 · 226 시·군·구 · 단위 %
+    </div>
+    <div class="metric-toggle" id="metric-toggle">
+      <button data-metric="value" class="active">재정자립도</button>
+      <button data-metric="budget">예산규모</button>
+      <button data-metric="income">자체수입</button>
+    </div>
+  </header>
+
+  <div class="map-wrap">
+    <div class="loading" id="map-loading">▸ 지도 데이터를 불러오는 중…</div>
+    <svg id="map-svg" viewBox="0 0 600 800" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" style="display:none;"></svg>
+    <button class="reset-btn" id="reset-zoom">◧ 전국 보기</button>
+    <div class="hint" id="hint">▸ <span class="acc">탭</span>으로 확대 · <span class="acc">핀치/드래그</span>로 줌·이동 · 다시 탭하면 상세</div>
+  </div>
+
+  <div class="legend">
+    <div class="legend-title" id="legend-title">재정자립도 (%)</div>
+    <div class="legend-bar" id="legend-bar"></div>
+    <div class="legend-ticks" id="legend-ticks"></div>
+  </div>
+</div>
+
+<div class="sheet-backdrop" id="sheet-backdrop"></div>
+<div class="sheet" id="sheet">
+  <div class="sheet-handle"></div>
+  <button class="sheet-close" id="sheet-close" aria-label="close">✕</button>
+  <div id="sheet-body"></div>
+</div>
+
+<script>
+/* ═════════════════════════════════════════════════════════════
+   1. RAW DATA  ─  FY2025 재정자립도(당초)
+   [full, 자체수입(백만), 예산규모(백만), 재정자립도(%)]
+   ───────────────────────────────────────────────────────────── */
+const RAW = [
+["서울본청",24638217,32660565,75.44],["서울종로구",215287,540366,39.84],["서울중구",291847,523878,55.71],
+["서울용산구",241230,646414,37.32],["서울성동구",231677,704262,32.9],["서울광진구",179223,778239,23.03],
+["서울동대문구",179806,886000,20.29],["서울중랑구",167361,1108099,15.1],["서울성북구",180762,1063571,17],
+["서울강북구",143771,924012,15.56],["서울도봉구",142611,850779,16.76],["서울노원구",211506,1277967,16.55],
+["서울은평구",180224,1148000,15.7],["서울서대문구",166495,771630,21.58],["서울마포구",234798,805280,29.16],
+["서울양천구",223789,964941,23.19],["서울강서구",249530,1284168,19.43],["서울구로구",191216,975300,19.61],
+["서울금천구",160462,743148,21.59],["서울영등포구",307706,896061,34.34],["서울동작구",245231,870000,28.19],
+["서울관악구",177403,1034658,17.15],["서울서초구",445295,846219,52.62],["서울강남구",727812,1328078,54.8],
+["서울송파구",386711,1177743,32.83],["서울강동구",263267,1057621,24.89],
+["부산본청",4958611,12920238,38.38],["부산중구",44187,195273,22.63],["부산서구",51309,413573,12.41],
+["부산동구",55640,377184,14.75],["부산영도구",40712,429101,9.49],["부산부산진구",152412,860955,17.7],
+["부산동래구",104025,575732,18.07],["부산남구",113692,665859,17.07],["부산북구",68392,691945,9.88],
+["부산해운대구",215595,866592,24.88],["부산사하구",98021,650482,15.07],["부산금정구",90236,577345,15.63],
+["부산강서구",192803,487159,39.58],["부산연제구",87936,502410,17.5],["부산수영구",77873,476741,16.33],
+["부산사상구",92212,577525,15.97],["부산기장군",203377,724917,28.06],
+["대구본청",3247796,8506658,38.18],["대구중구",86583,335100,25.84],["대구동구",137213,954400,14.38],
+["대구서구",74102,592000,12.52],["대구남구",52377,519492,10.08],["대구북구",148711,931900,15.96],
+["대구수성구",204861,849840,24.11],["대구달서구",201528,1111966,18.12],["대구달성군",256805,953000,26.95],
+["대구군위군",38902,400300,9.72],
+["인천본청",4980712,10742490,46.36],["인천중구",240477,571555,42.07],["인천동구",43678,342046,12.77],
+["인천미추홀구",137525,1039561,13.23],["인천연수구",250359,837328,29.9],["인천남동구",202418,1205985,16.78],
+["인천부평구",185308,1183872,15.65],["인천계양구",104211,714673,14.58],["인천서구",358401,1301876,27.53],
+["인천강화군",79961,668655,11.96],["인천옹진군",44176,439423,10.05],
+["광주본청",2169393,6105731,35.53],["광주동구",56909,401854,14.16],["광주서구",128321,653842,19.63],
+["광주남구",76390,598109,12.77],["광주북구",129350,1033724,12.51],["광주광산구",180334,972755,18.54],
+["대전본청",1987195,5402641,36.78],["대전동구",70720,716102,9.88],["대전중구",81661,679124,12.02],
+["대전서구",161027,989249,16.28],["대전유성구",201911,784868,25.73],["대전대덕구",76672,567600,13.51],
+["울산본청",1688041,4112799,41.04],["울산중구",73304,502541,14.59],["울산남구",173169,668204,25.92],
+["울산동구",65019,400017,16.25],["울산북구",120102,494035,24.31],["울산울주군",371693,1170773,31.75],
+["세종본청",868357,1599033,54.31],
+["경기본청",14732495,32477706,45.36],["경기수원시",1235114,2881488,42.86],["경기성남시",1696503,3159920,53.69],
+["경기고양시",906561,2809601,32.27],["경기용인시",1403566,2932199,47.87],["경기부천시",585574,2082676,28.12],
+["경기안산시",679838,1985463,34.24],["경기안양시",553695,1544602,35.85],["경기남양주시",575268,2054086,28.01],
+["경기화성시",1622459,3118753,52.02],["경기평택시",844076,2027938,41.62],["경기의정부시",285162,1289636,22.11],
+["경기시흥시",525429,1542062,34.07],["경기파주시",505810,1774081,28.51],["경기광명시",330996,922919,35.86],
+["경기김포시",487145,1458097,33.41],["경기군포시",217175,759532,28.59],["경기광주시",394393,1244944,31.68],
+["경기이천시",541148,1191428,45.42],["경기양주시",283467,1069950,26.49],["경기오산시",262414,753007,34.85],
+["경기구리시",174463,642710,27.14],["경기안성시",310640,1088681,28.53],["경기포천시",204958,1045668,19.6],
+["경기의왕시",206619,546597,37.8],["경기하남시",394795,913708,43.21],["경기여주시",172585,817634,21.11],
+["경기동두천시",67722,538702,12.57],["경기과천시",186162,447119,41.64],["경기양평군",137014,790885,17.32],
+["경기가평군",80111,468343,17.11],["경기연천군",83027,543002,15.29],
+["강원본청",1913581,6787600,28.19],["강원춘천시",268114,1418273,18.9],["강원원주시",265673,1468012,18.1],
+["강원강릉시",218548,1279669,17.08],["강원동해시",87729,502001,17.48],["강원태백시",65766,436192,15.08],
+["강원속초시",77897,438324,17.77],["강원삼척시",89216,685524,13.01],["강원홍천군",87750,719286,12.2],
+["강원횡성군",65156,544255,11.97],["강원영월군",76399,581450,13.14],["강원평창군",65134,515987,12.62],
+["강원정선군",73540,508243,14.47],["강원철원군",60580,551650,10.98],["강원화천군",30713,375516,8.18],
+["강원양구군",31391,363640,8.63],["강원인제군",47106,552594,8.52],["강원고성군",39211,384633,10.19],
+["강원양양군",52985,386144,13.72],
+["충북본청",1803694,6270453,28.76],["충북청주시",910980,3132644,29.08],["충북충주시",216292,1248472,17.32],
+["충북제천시",137009,975453,14.05],["충북보은군",46700,473353,9.87],["충북옥천군",58678,525929,11.16],
+["충북영동군",54199,459371,11.8],["충북증평군",41495,261318,15.88],["충북진천군",167676,585523,28.64],
+["충북괴산군",50635,475601,10.65],["충북음성군",162825,736443,22.11],["충북단양군",49349,401558,12.29],
+["충남본청",2983516,9430900,31.64],["충남천안시",706746,2100000,33.65],["충남공주시",120087,933300,12.87],
+["충남보령시",117379,865671,13.56],["충남아산시",526394,1626400,32.37],["충남서산시",209626,1125347,18.63],
+["충남논산시",105240,987812,10.65],["충남계룡시",34420,237968,14.46],["충남당진시",228546,1056993,21.62],
+["충남금산군",62716,676263,9.27],["충남부여군",69993,699300,10.01],["충남서천군",61671,691614,8.92],
+["충남청양군",51005,547000,9.32],["충남홍성군",106795,777200,13.74],["충남예산군",112852,824592,13.69],
+["충남태안군",81956,657825,12.46],
+["전북본청",1973313,8606731,22.93],["전북전주시",537742,2448858,21.96],["전북군산시",255242,1473515,17.32],
+["전북익산시",233895,1653328,14.15],["전북정읍시",106677,1073725,9.94],["전북남원시",83416,928889,8.98],
+["전북김제시",100592,1029407,9.77],["전북완주군",136988,849898,16.12],["전북진안군",32854,491705,6.68],
+["전북무주군",36492,422104,8.65],["전북장수군",32198,425078,7.57],["전북임실군",41602,478592,8.69],
+["전북순창군",42087,509639,8.26],["전북고창군",79242,830622,9.54],["전북부안군",74777,778473,9.61],
+["전남본청",2419855,9788209,24.72],["전남목포시",158675,913311,17.37],["전남여수시",321255,1350926,23.78],
+["전남순천시",250502,1285726,19.48],["전남나주시",150206,926384,16.21],["전남광양시",200220,958143,20.9],
+["전남담양군",58583,518310,11.3],["전남곡성군",39009,438799,8.89],["전남구례군",26096,340751,7.66],
+["전남고흥군",56223,884642,6.36],["전남보성군",42118,571381,7.37],["전남화순군",84796,629452,13.47],
+["전남장흥군",44377,521595,8.51],["전남강진군",39815,470274,8.47],["전남해남군",68919,881330,7.82],
+["전남영암군",78288,648171,12.08],["전남무안군",84696,593663,14.27],["전남함평군",41992,491501,8.54],
+["전남영광군",71520,599596,11.93],["전남장성군",99260,563086,17.63],["전남완도군",42858,594708,7.21],
+["전남진도군",37018,426706,8.68],["전남신안군",44794,664385,6.74],
+["경북본청",2910554,11426730,25.47],["경북포항시",533871,2544000,20.99],["경북경주시",329836,1729200,19.07],
+["경북김천시",143494,1278500,11.22],["경북안동시",144019,1463000,9.84],["경북구미시",465116,1774500,26.21],
+["경북영주시",102281,998100,10.25],["경북영천시",120602,980800,12.3],["경북상주시",94950,1134800,8.37],
+["경북문경시",94025,933000,10.08],["경북경산시",242870,1228000,19.78],["경북의성군",56776,668318,8.5],
+["경북청송군",35229,445228,7.91],["경북영양군",22778,374800,6.08],["경북영덕군",45504,589467,7.72],
+["경북청도군",53144,571293,9.3],["경북고령군",50075,438322,11.42],["경북성주군",65614,567000,11.57],
+["경북칠곡군",122000,690000,17.68],["경북예천군",60800,637838,9.53],["경북봉화군",37387,513400,7.28],
+["경북울진군",72491,592000,12.25],["경북울릉군",29876,210000,14.23],
+["경남본청",3533881,10677490,33.1],["경남창원시",1033998,3291189,31.42],["경남진주시",292134,1485037,19.67],
+["경남통영시",101002,773352,13.06],["경남사천시",132110,853421,15.48],["경남김해시",515374,1884407,27.35],
+["경남밀양시",128427,988362,12.99],["경남거제시",190974,1156579,16.51],["경남양산시",430803,1526964,28.21],
+["경남의령군",35971,427416,8.42],["경남함안군",110468,685262,16.12],["경남창녕군",85769,656472,13.07],
+["경남고성군",63768,619359,10.3],["경남남해군",53751,535249,10.04],["경남하동군",56450,576325,9.79],
+["경남산청군",62197,593375,10.48],["경남함양군",63124,607670,10.39],["경남거창군",66660,743076,8.97],
+["경남합천군",57952,718844,8.06],
+["제주본청",1994784,6032757,33.07]
+];
+
+const PROVINCES = ["서울","부산","대구","인천","광주","대전","울산","세종","경기","강원","충북","충남","전북","전남","경북","경남","제주"];
+const PROV_FULL = {
+  "서울":"서울특별시","부산":"부산광역시","대구":"대구광역시","인천":"인천광역시",
+  "광주":"광주광역시","대전":"대전광역시","울산":"울산광역시","세종":"세종특별자치시",
+  "경기":"경기도","강원":"강원특별자치도","충북":"충청북도","충남":"충청남도",
+  "전북":"전북특별자치도","전남":"전라남도","경북":"경상북도","경남":"경상남도","제주":"제주특별자치도"
+};
+
+const DATA = RAW.map(([full, income, budget, value]) => {
+  let province = null, muni = null;
+  for (const p of PROVINCES) {
+    if (full.startsWith(p)) { province = p; muni = full.slice(p.length); break; }
+  }
+  const isHead = (muni === "본청");
+  return { full, province, muni: isHead ? null : muni, isHead, income, budget, value };
+});
+
+const HEADS = DATA.filter(d => d.isHead);
+const MUNIS = DATA.filter(d => !d.isHead);
+
+const PROV_AREA_FALLBACK = {
+  "세종": HEADS.find(d => d.province === "세종"),
+  "제주": HEADS.find(d => d.province === "제주")
+};
+
+const muniByKey = new Map(MUNIS.map(d => [`${d.province}_${d.muni}`, d]));
+const headByProvince = new Map(HEADS.map(d => [d.province, d]));
+
+/* ═════════════════════════════════════════════════════════════
+   2. METRIC HELPERS
+   ───────────────────────────────────────────────────────────── */
+const METRIC_INFO = {
+  value:  { label: "재정자립도", unit: "%", legendTitle: "재정자립도 (%)" },
+  budget: { label: "예산규모", unit: "억원", legendTitle: "예산규모 (억원)" },
+  income: { label: "자체수입", unit: "억원", legendTitle: "자체수입 (억원)" }
+};
+let currentMetric = "value";
+function getVal(d) { return d ? d[currentMetric] : null; }
+
+/* ═════════════════════════════════════════════════════════════
+   3. COLOR SCALE & LEGEND
+   ───────────────────────────────────────────────────────────── */
+function makeColorScale() {
+  const vals = MUNIS.map(d => getVal(d));
+  const sorted = vals.slice().sort((a,b) => a - b);
+  const p95 = d3.quantile(sorted, 0.95);
+  const min = d3.min(vals);
+  const max = d3.max(vals);
+  const lo = currentMetric === "value" ? min : min;
+  const hi = currentMetric === "value" ? max : p95;
+  return d3.scaleSequential()
+    .domain([lo, hi])
+    .interpolator(d3.interpolateYlOrRd)
+    .clamp(true);
+}
+let colorScale = makeColorScale();
+
+function buildLegend() {
+  document.getElementById("legend-title").textContent = METRIC_INFO[currentMetric].legendTitle;
+  const bar = document.getElementById("legend-bar");
+  bar.innerHTML = "";
+  const N = 12;
+  const [lo, hi] = colorScale.domain();
+  for (let i = 0; i < N; i++) {
+    const t = lo + (hi - lo) * (i / (N - 1));
+    const span = document.createElement("span");
+    span.style.background = colorScale(t);
+    bar.appendChild(span);
+  }
+  const ticks = document.getElementById("legend-ticks");
+  // 데이터는 백만원 단위 → 억원으로 변환 (÷100)
+  const fmt = v => currentMetric === "value"
+    ? v.toFixed(1) + "%"
+    : Math.round(v / 100).toLocaleString();
+  ticks.innerHTML = `<span>${fmt(lo)}</span><span>${fmt((lo+hi)/2)}</span><span>${fmt(hi)}+</span>`;
+}
+
+/* ═════════════════════════════════════════════════════════════
+   4. NAME / PROVINCE NORMALISATION
+   ───────────────────────────────────────────────────────────── */
+function normProvinceName(raw) {
+  if (!raw) return null;
+  const s = String(raw).replace(/\s/g, "");
+  if (/^서울/.test(s)) return "서울";
+  if (/^부산/.test(s)) return "부산";
+  if (/^대구/.test(s)) return "대구";
+  if (/^인천/.test(s)) return "인천";
+  if (/^광주광역|^광주특별/.test(s)) return "광주";
+  if (s === "광주") return "광주";
+  if (/^대전/.test(s)) return "대전";
+  if (/^울산/.test(s)) return "울산";
+  if (/^세종/.test(s)) return "세종";
+  if (/^경기/.test(s)) return "경기";
+  if (/^강원/.test(s)) return "강원";
+  if (/^충청북|^충북/.test(s)) return "충북";
+  if (/^충청남|^충남/.test(s)) return "충남";
+  if (/^전라북|^전북/.test(s)) return "전북";
+  if (/^전라남|^전남/.test(s)) return "전남";
+  if (/^경상북|^경북/.test(s)) return "경북";
+  if (/^경상남|^경남/.test(s)) return "경남";
+  if (/^제주/.test(s)) return "제주";
+  return null;
+}
+
+function normMuniName(raw) {
+  if (!raw) return null;
+  let n = String(raw).trim();
+  n = n.replace(/^(서울특별시|부산광역시|대구광역시|인천광역시|광주광역시|대전광역시|울산광역시|세종특별자치시|경기도|강원도|강원특별자치도|충청북도|충청남도|전라북도|전북특별자치도|전라남도|경상북도|경상남도|제주특별자치도)\s*/, "");
+  n = n.trim();
+  const tokens = n.split(/\s+/).filter(Boolean);
+  if (tokens.length >= 2) {
+    n = tokens[tokens.length - 1];
+  } else {
+    const m = n.match(/^(.+?[시군])([가-힣]+(?:구|시|군))$/);
+    if (m) n = m[2];
+  }
+  return n.trim();
+}
+
+/* ═════════════════════════════════════════════════════════════
+   5. RENDER MAP
+   ───────────────────────────────────────────────────────────── */
+const svg = d3.select("#map-svg");
+const svgEl = document.getElementById("map-svg");
+const W = 600, H = 800;
+
+let pathByKey = new Map();
+let muniFeatures = [];
+let provinceFeatures = [];
+let projection, geoPath;
+let zoomLayer = null;
+let muniLabelLayer = null;
+let activeZoomProvince = null;
+let activeKey = null;
+let zoomBehavior = null;
+let didZoom = false;
+
+// 광역별 평행이동(viewBox 단위). 현재 비활성 — 실제 지리적 인접 관계
+// (송파-하남, 강남-과천 등)을 그대로 보여주기 위해 모든 광역을 원위치로.
+const PROV_OFFSET = {};
+function provOff(prov) { return PROV_OFFSET[prov] || [0, 0]; }
+
+function featureKey(f) {
+  if (f.__isFallback) return `__province_${f.__province}`;
+  return `${f.__province}_${f.__name}`;
+}
+
+function regionDataFor(f) {
+  if (f.__isFallback) return PROV_AREA_FALLBACK[f.__province];
+  return muniByKey.get(`${f.__province}_${f.__name}`);
+}
+
+function renderMap(muniFC, provFC) {
+  const provLookup = provFC.features.map(f => {
+    const props = f.properties || {};
+    const raw = props.name || props.NAME || props.CTP_KOR_NM || props.adm_nm;
+    return { name: normProvinceName(raw), feature: f };
+  }).filter(p => p.name);
+  const provByName = new Map(provLookup.map(p => [p.name, p.feature]));
+
+  muniFC.features.forEach(f => {
+    const props = f.properties || {};
+    const rawName = props.name || props.NAME || props.SIG_KOR_NM || props.SGG_NM;
+    f.__name = normMuniName(rawName);
+    const code = props.code || props.SIG_CD || f.id;
+    let prov = null;
+    if (code) {
+      const prefix = String(code).substring(0, 2);
+      const CODE_MAP = {"11":"서울","21":"부산","22":"대구","23":"인천","24":"광주",
+        "25":"대전","26":"울산","29":"세종","31":"경기","32":"강원","33":"충북",
+        "34":"충남","35":"전북","36":"전남","37":"경북","38":"경남","39":"제주"};
+      prov = CODE_MAP[prefix];
+    }
+    if (!prov) {
+      const geoCentroid = d3.geoCentroid(f);
+      for (const [pname, pfeat] of provByName) {
+        if (d3.geoContains(pfeat, geoCentroid)) { prov = pname; break; }
+      }
+    }
+    f.__province = prov;
+  });
+
+  const ADMIN_REMAP = {
+    "경기_장안구":"수원시","경기_권선구":"수원시","경기_팔달구":"수원시","경기_영통구":"수원시",
+    "경기_수정구":"성남시","경기_중원구":"성남시","경기_분당구":"성남시",
+    "경기_덕양구":"고양시","경기_일산동구":"고양시","경기_일산서구":"고양시",
+    "경기_만안구":"안양시","경기_동안구":"안양시",
+    "경기_상록구":"안산시","경기_단원구":"안산시",
+    "경기_처인구":"용인시","경기_기흥구":"용인시","경기_수지구":"용인시",
+    "경기_원미구":"부천시","경기_소사구":"부천시","경기_오정구":"부천시",
+    "충북_상당구":"청주시","충북_서원구":"청주시","충북_흥덕구":"청주시","충북_청원구":"청주시",
+    "충북_청원군":"청주시",
+    "충남_동남구":"천안시","충남_서북구":"천안시",
+    "전북_완산구":"전주시","전북_덕진구":"전주시",
+    "경북_남구":"포항시","경북_북구":"포항시",
+    "경남_의창구":"창원시","경남_성산구":"창원시",
+    "경남_마산합포구":"창원시","경남_마산회원구":"창원시","경남_진해구":"창원시",
+    "경남_마산시":"창원시","경남_진해시":"창원시"
+  };
+  muniFC.features.forEach(f => {
+    if (!f.__province || !f.__name) return;
+    if (f.__name === "군위군" && f.__province === "경북") f.__province = "대구";
+    const k = `${f.__province}_${f.__name}`;
+    if (ADMIN_REMAP[k]) f.__name = ADMIN_REMAP[k];
+  });
+
+  const validMuniFeatures = muniFC.features.filter(f =>
+    f.__province && f.__name && muniByKey.has(`${f.__province}_${f.__name}`)
+  );
+
+  const munisByGroupKey = d3.group(validMuniFeatures, f => `${f.__province}_${f.__name}`);
+  const mergedMunis = [];
+  for (const [key, fs] of munisByGroupKey) {
+    if (fs.length === 1) { mergedMunis.push(fs[0]); continue; }
+    const allCoords = [];
+    let proto = fs[0];
+    for (const f of fs) {
+      const g = f.geometry;
+      if (!g) continue;
+      if (g.type === "Polygon") allCoords.push(g.coordinates);
+      else if (g.type === "MultiPolygon") g.coordinates.forEach(c => allCoords.push(c));
+    }
+    mergedMunis.push({
+      type: "Feature",
+      __name: proto.__name, __province: proto.__province,
+      properties: { name: proto.__name },
+      geometry: { type: "MultiPolygon", coordinates: allCoords }
+    });
+  }
+
+  for (const pname of ["세종", "제주"]) {
+    const pfeat = provByName.get(pname);
+    if (!pfeat) continue;
+    for (let i = mergedMunis.length - 1; i >= 0; i--) {
+      if (mergedMunis[i].__province === pname) mergedMunis.splice(i, 1);
+    }
+    mergedMunis.push({
+      type: "Feature",
+      __name: pname, __province: pname, __isFallback: true,
+      properties: { name: pname },
+      geometry: pfeat.geometry
+    });
+  }
+
+  // 서울 폴리곤을 마지막에 그려 경기 위에 표시 (offset 후 살짝 겹치는 경우 대비)
+  mergedMunis.sort((a, b) => (a.__province === "서울" ? 1 : 0) - (b.__province === "서울" ? 1 : 0));
+
+  muniFeatures = mergedMunis;
+  provinceFeatures = provFC.features.map(f => {
+    const props = f.properties || {};
+    f.__province = normProvinceName(props.name || props.NAME || props.CTP_KOR_NM);
+    return f;
+  });
+
+  const collection = { type: "FeatureCollection", features: mergedMunis };
+  projection = d3.geoMercator().fitExtent([[10,10],[W-10,H-10]], collection);
+  geoPath = d3.geoPath(projection);
+
+  document.getElementById("map-loading").style.display = "none";
+  svgEl.style.display = "block";
+
+  // Background hatch
+  const defs = svg.append("defs");
+  const pat = defs.append("pattern")
+    .attr("id", "hatch")
+    .attr("width", 6).attr("height", 6)
+    .attr("patternUnits", "userSpaceOnUse")
+    .attr("patternTransform", "rotate(45)");
+  pat.append("line")
+    .attr("x1", 0).attr("y1", 0).attr("x2", 0).attr("y2", 6)
+    .attr("stroke", "rgba(26,20,16,0.04)").attr("stroke-width", 1);
+  svg.append("rect")
+    .attr("width", W).attr("height", H)
+    .attr("fill", "url(#hatch)")
+    .style("cursor", "default")
+    .on("click", () => {
+      if (didZoom) return;
+      if (activeZoomProvince || d3.zoomTransform(svgEl).k > 1.05) resetZoom();
+    });
+
+  zoomLayer = svg.append("g").attr("class", "zoom-layer");
+
+  // ── PINCH/PAN ZOOM ── d3-zoom for touch (pinch + drag pan + double-tap)
+  zoomBehavior = d3.zoom()
+    .scaleExtent([1, 40])
+    .translateExtent([[-W * 0.5, -H * 0.5], [W * 1.5, H * 1.5]])
+    .on("start", () => { didZoom = false; })
+    .on("zoom", (event) => {
+      if (event.sourceEvent) didZoom = true;
+      zoomLayer.attr("transform", event.transform);
+      const k = event.transform.k;
+      // 광역/시·군·구 라벨은 동일 임계값에서 교차 — 광역이 사라지는 순간 시·군·구가 등장
+      const SHOW_MUNI_AT = 2.6;
+      zoomLayer.selectAll(".province-label")
+        .style("opacity", k > SHOW_MUNI_AT ? 0 : 1);
+      if (muniLabelLayer) {
+        muniLabelLayer.selectAll(".muni-label").classed("show", k > SHOW_MUNI_AT);
+      }
+      document.getElementById("reset-zoom").classList.toggle("show", k > 1.05);
+    });
+  svg.call(zoomBehavior);
+  svg.on("dblclick.zoom", null);
+
+  const g = zoomLayer.append("g").attr("class", "regions");
+  g.selectAll("path.region")
+    .data(mergedMunis)
+    .join("path")
+      .attr("class", "region")
+      .attr("d", geoPath)
+      .attr("transform", d => {
+        const o = PROV_OFFSET[d.__province];
+        return o ? `translate(${o[0]},${o[1]})` : null;
+      })
+      .attr("data-key", d => featureKey(d))
+      .each(function(d) { pathByKey.set(featureKey(d), this); })
+      .on("click", function(event, d) {
+        event.stopPropagation();
+        if (didZoom) return;
+        if (!d.__province) return;
+        handleRegionTap(d);
+      });
+
+  zoomLayer.append("g").attr("class", "province-lines")
+    .selectAll("path.province-line")
+    .data(provinceFeatures)
+    .join("path")
+      .attr("class", "province-line")
+      .attr("d", geoPath)
+      .attr("transform", d => {
+        const o = PROV_OFFSET[d.__province];
+        return o ? `translate(${o[0]},${o[1]})` : null;
+      });
+
+  const labelG = zoomLayer.append("g").attr("class", "province-labels");
+  labelG.selectAll("text.province-label")
+    .data(provinceFeatures.filter(f => f.__province))
+    .join("text")
+      .attr("class", "province-label")
+      .attr("transform", d => {
+        const c = geoPath.centroid(d);
+        const o = provOff(d.__province);
+        return `translate(${c[0] + o[0]}, ${c[1] + o[1]})`;
+      })
+      .attr("text-anchor", "middle")
+      .attr("dy", "0.35em")
+      .text(d => PROV_FULL[d.__province] ? d.__province : "");
+
+  muniLabelLayer = zoomLayer.append("g").attr("class", "muni-labels");
+
+  // 모든 시·군·구 라벨 사전 렌더 (기본 숨김 → 줌 인 시 표시)
+  // 폰트 크기는 각 행정구역 폴리곤의 바운딩박스에 맞춰 자동 산출 → 라벨이 영역 안에 들어가도록
+  muniLabelLayer.selectAll("text.muni-label")
+    .data(muniFeatures.filter(f => !f.__isFallback))
+    .join("text")
+      .attr("class", "muni-label")
+      .attr("transform", d => {
+        const c = geoPath.centroid(d);
+        const o = provOff(d.__province);
+        return `translate(${c[0] + o[0]}, ${c[1] + o[1]})`;
+      })
+      .attr("text-anchor", "middle")
+      .attr("dy", "0.35em")
+      .text(d => d.__name || "")
+      .each(function(d) {
+        const b = geoPath.bounds(d);
+        const w = b[1][0] - b[0][0];
+        const h = b[1][1] - b[0][1];
+        const name = d.__name || "";
+        // 서울/경기는 자치구가 좁고 빽빽 → 라벨을 더 작게 잡아 줌 시에도 컴팩트하게
+        const isDense = d.__province === "서울" || d.__province === "경기";
+        const widthMul  = isDense ? 0.60 : 0.92;
+        const heightMul = isDense ? 0.30 : 0.42;
+        const cap       = isDense ? 2.5  : 4.0;
+        const minSize   = isDense ? 0.5  : 0.6;
+        const byWidth  = (w * widthMul) / Math.max(1.5, name.length * 0.95);
+        const byHeight = h * heightMul;
+        const fs = Math.max(minSize, Math.min(byWidth, byHeight, cap));
+        this.style.fontSize   = fs + "px";
+        this.style.strokeWidth = (fs * 0.18) + "px";
+      });
+
+  applyColors();
+}
+
+/* ═════════════════════════════════════════════════════════════
+   TAP HANDLING — first tap on a province zooms in;
+   in zoomed view, tap on muni opens detail sheet
+   ───────────────────────────────────────────────────────────── */
+function handleRegionTap(d) {
+  hideHint();
+  const data = regionDataFor(d);
+  if (!data) return;
+  const currentK = d3.zoomTransform(svgEl).k;
+  const isZoomed = currentK > 1.6;
+
+  // 세종/제주 single-region → 바로 상세 열기 (이미 광역 본청 데이터)
+  if (d.__isFallback) {
+    setActiveKey(featureKey(d));
+    openSheetFor(data);
+    return;
+  }
+
+  // 전국 화면(광역 라벨이 보이는 상태) → 광역 본청 요약 시트 + 광역 영역으로 확대
+  if (!isZoomed) {
+    const head = headByProvince.get(d.__province);
+    if (head) openSheetFor(head);
+    zoomToProvince(d.__province);
+    return;
+  }
+
+  // 이미 확대된 상태 → 해당 시·군·구 상세
+  setActiveKey(featureKey(d));
+  openSheetFor(data);
+}
+
+function setActiveKey(key) {
+  activeKey = key;
+  d3.selectAll("#map-svg .region")
+    .classed("active", function(d) { return featureKey(d) === key; });
+}
+
+/* ═════════════════════════════════════════════════════════════
+   ZOOM CONTROL
+   ───────────────────────────────────────────────────────────── */
+function zoomToProvince(provName) {
+  const provFeat = provinceFeatures.find(f => f.__province === provName);
+  if (!provFeat) return;
+  const [[x0,y0],[x1,y1]] = geoPath.bounds(provFeat);
+  const dx = x1 - x0, dy = y1 - y0;
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  const k = Math.min(W / dx, H / dy) * 0.9;
+  const off = provOff(provName);
+  const tx = W / 2 - k * (cx + off[0]);
+  const ty = H / 2 - k * (cy + off[1]);
+
+  // d3.zoom 트랜스폼으로 애니메이션 — 라벨/축척 등은 zoom 이벤트가 자동 갱신
+  svg.transition().duration(700).call(
+    zoomBehavior.transform,
+    d3.zoomIdentity.translate(tx, ty).scale(k)
+  );
+
+  activeZoomProvince = provName;
+  document.getElementById("reset-zoom").classList.add("show");
+  hideHint();
+}
+
+function resetZoom() {
+  if (!zoomBehavior) return;
+  svg.transition().duration(550).call(
+    zoomBehavior.transform,
+    d3.zoomIdentity
+  );
+  d3.selectAll("#map-svg .region").classed("active", false);
+  activeZoomProvince = null;
+  activeKey = null;
+  document.getElementById("reset-zoom").classList.remove("show");
+}
+
+document.getElementById("reset-zoom").addEventListener("click", () => {
+  resetZoom();
+  closeSheet();
+});
+
+function applyColors() {
+  colorScale = makeColorScale();
+  d3.selectAll("#map-svg .region")
+    .attr("fill", d => {
+      const data = regionDataFor(d);
+      const v = getVal(data);
+      return v == null ? "#d8cfbe" : colorScale(v);
+    });
+  buildLegend();
+  if (muniLabelLayer) {
+    const [lo, hi] = colorScale.domain();
+    muniLabelLayer.selectAll(".muni-label")
+      .classed("high", function(d) {
+        const data = regionDataFor(d);
+        const v = getVal(data);
+        const t = (v - lo) / (hi - lo);
+        return t > 0.65;
+      });
+  }
+}
+
+/* ═════════════════════════════════════════════════════════════
+   BOTTOM SHEET — detail panel
+   ───────────────────────────────────────────────────────────── */
+// 데이터는 백만원 단위. 1억원 = 100백만원. 모두 억원으로 통일.
+const fmtEok = v => ({
+  val: Math.round(v / 100).toLocaleString(),
+  unit: "억원"
+});
+
+function metricCellsFor(d) {
+  const b = fmtEok(d.budget);
+  const i = fmtEok(d.income);
+  return `
+    <div class="ic-cell">
+      <div class="lbl">재정자립도</div>
+      <div class="val">${d.value.toFixed(2)}<span class="unit">%</span></div>
+    </div>
+    <div class="ic-cell">
+      <div class="lbl">예산규모</div>
+      <div class="val">${b.val}<span class="unit">${b.unit}</span></div>
+    </div>
+    <div class="ic-cell">
+      <div class="lbl">자체수입</div>
+      <div class="val">${i.val}<span class="unit">${i.unit}</span></div>
+    </div>
+  `;
+}
+
+function openSheetFor(data) {
+  if (!data) return;
+  const body = document.getElementById('sheet-body');
+  const isHead = data.isHead;
+  const provMunis = MUNIS.filter(x => x.province === data.province);
+  const head = headByProvince.get(data.province);
+  const natAvg = d3.mean(MUNIS.map(x => x.value));
+  const provAvg = provMunis.length ? d3.mean(provMunis.map(x => x.value)) : null;
+
+  let extras = "";
+  if (!isHead) {
+    const sortedNat = MUNIS.slice().sort((a,b) => b.value - a.value);
+    const rankNat = sortedNat.findIndex(x => x === data) + 1;
+    const sortedProv = provMunis.slice().sort((a,b) => b.value - a.value);
+    const rankProv = sortedProv.findIndex(x => x === data) + 1;
+    const diffProv = provAvg != null ? data.value - provAvg : null;
+    const diffNat  = data.value - natAvg;
+    extras = `
+      <div class="row"><span>전국 순위 (자립도)</span><strong>${rankNat} / ${MUNIS.length}</strong></div>
+      <div class="row"><span>광역 내 순위</span><strong>${rankProv} / ${provMunis.length}</strong></div>
+      <div class="row"><span>광역 본청 자립도</span><strong>${head ? head.value.toFixed(2)+'%' : '–'}</strong></div>
+      <div class="row ${diffProv > 0 ? 'pos' : 'neg'}"><span>광역 평균 대비</span><strong>${(diffProv >= 0 ? '+' : '') + diffProv.toFixed(2)}%p</strong></div>
+      <div class="row ${diffNat  > 0 ? 'pos' : 'neg'}"><span>전국 평균 대비</span><strong>${(diffNat  >= 0 ? '+' : '') + diffNat.toFixed(2)}%p</strong></div>
+    `;
+  } else {
+    const sortedHeads = HEADS.slice().sort((a,b) => b.value - a.value);
+    const rankHead = sortedHeads.findIndex(x => x === data) + 1;
+    const headAvg = d3.mean(HEADS.map(x => x.value));
+    const diffHeadAvg = data.value - headAvg;
+    extras = `
+      <div class="row"><span>구분</span><strong>광역 본청</strong></div>
+      <div class="row"><span>17개 본청 중 순위</span><strong>${rankHead} / ${HEADS.length}</strong></div>
+      <div class="row"><span>관할 시·군·구</span><strong>${provMunis.length}개</strong></div>
+      <div class="row ${diffHeadAvg > 0 ? 'pos' : 'neg'}"><span>본청 평균 대비</span><strong>${(diffHeadAvg >= 0 ? '+' : '') + diffHeadAvg.toFixed(2)}%p</strong></div>
+    `;
+  }
+
+  body.innerHTML = `
+    <div class="ic-prov">${PROV_FULL[data.province] || ''}</div>
+    <div class="ic-name">${isHead ? PROV_FULL[data.province] + ' 본청' : data.muni}</div>
+    <div class="ic-metrics">${metricCellsFor(data)}</div>
+    <div class="ic-extras">${extras}</div>
+  `;
+
+  document.getElementById('sheet').classList.add('show');
+  document.getElementById('sheet-backdrop').classList.add('show');
+}
+
+function closeSheet() {
+  document.getElementById('sheet').classList.remove('show');
+  document.getElementById('sheet-backdrop').classList.remove('show');
+  d3.selectAll("#map-svg .region").classed("active", false);
+  activeKey = null;
+}
+
+document.getElementById('sheet-close').addEventListener('click', closeSheet);
+document.getElementById('sheet-backdrop').addEventListener('click', closeSheet);
+
+// Swipe-down to dismiss
+(function attachSwipeClose() {
+  const sheet = document.getElementById('sheet');
+  let startY = null;
+  let startTransform = 0;
+  sheet.addEventListener('touchstart', (e) => {
+    if (sheet.scrollTop > 0) return;
+    startY = e.touches[0].clientY;
+    startTransform = 0;
+    sheet.style.transition = 'none';
+  }, { passive: true });
+  sheet.addEventListener('touchmove', (e) => {
+    if (startY == null) return;
+    const dy = e.touches[0].clientY - startY;
+    if (dy > 0) {
+      sheet.style.transform = `translateY(${dy}px)`;
+    }
+  }, { passive: true });
+  sheet.addEventListener('touchend', (e) => {
+    if (startY == null) return;
+    sheet.style.transition = '';
+    sheet.style.transform = '';
+    const endY = (e.changedTouches[0] || {}).clientY;
+    if (endY != null && endY - startY > 100) {
+      closeSheet();
+    }
+    startY = null;
+  });
+})();
+
+/* hint banner — hide on first interaction */
+let hintHidden = false;
+function hideHint() {
+  if (hintHidden) return;
+  hintHidden = true;
+  document.getElementById('hint').classList.add('hide');
+}
+setTimeout(hideHint, 6000);
+
+/* ═════════════════════════════════════════════════════════════
+   METRIC TOGGLE
+   ───────────────────────────────────────────────────────────── */
+document.querySelectorAll("#metric-toggle button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#metric-toggle button").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    currentMetric = btn.dataset.metric;
+    applyColors();
+  });
+});
+
+/* ═════════════════════════════════════════════════════════════
+   INITIAL LOAD
+   ───────────────────────────────────────────────────────────── */
+buildLegend();
+
+const MUNI_SOURCES = [
+  { url: "https://raw.githubusercontent.com/southkorea/southkorea-maps/master/kostat/2013/json/skorea_municipalities_topo_simple.json",
+    parse: (j) => topojson.feature(j, j.objects.skorea_municipalities_geo_simple || Object.values(j.objects)[0]) },
+  { url: "https://raw.githubusercontent.com/southkorea/southkorea-maps/master/kostat/2013/json/skorea_municipalities_geo_simple.json",
+    parse: (j) => j }
+];
+
+const PROV_SOURCES = [
+  { url: "https://raw.githubusercontent.com/southkorea/southkorea-maps/master/kostat/2013/json/skorea_provinces_topo_simple.json",
+    parse: (j) => topojson.feature(j, j.objects.skorea_provinces_geo_simple || Object.values(j.objects)[0]) },
+  { url: "https://raw.githubusercontent.com/southkorea/southkorea-maps/master/kostat/2013/json/skorea_provinces_geo_simple.json",
+    parse: (j) => j }
+];
+
+async function fetchFirst(sources) {
+  for (const s of sources) {
+    try {
+      const res = await fetch(s.url);
+      if (!res.ok) continue;
+      const json = await res.json();
+      return s.parse(json);
+    } catch (e) {
+      console.warn("fetch failed", s.url, e);
+    }
+  }
+  return null;
+}
+
+async function loadAll() {
+  const [muniFC, provFC] = await Promise.all([
+    fetchFirst(MUNI_SOURCES),
+    fetchFirst(PROV_SOURCES)
+  ]);
+  if (!muniFC || !provFC) {
+    document.getElementById("map-loading").innerHTML =
+      "▸ 지도 데이터를 불러오지 못했습니다.<br/>네트워크 또는 CDN 접근을 확인해 주세요.";
+    return;
+  }
+  renderMap(muniFC, provFC);
+}
+
+loadAll();
+</script>
+</body>
+</html>
